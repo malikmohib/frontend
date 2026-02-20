@@ -10,4 +10,14 @@ export const endpoints = {
       balances: "/admin/dashboard/balances",
     },
   },
-} as const;
+
+  seller: {
+    dashboard: {
+      summaryRollup: "/sellers/dashboard/summary-rollup",
+      salesByPlanRollup: "/sellers/dashboard/sales-by-plan-rollup",
+      salesBySellerRollup: "/sellers/dashboard/sales-by-seller-rollup",
+      profitBySeller: "/sellers/dashboard/profit-by-seller",
+      balances: "/sellers/dashboard/balances",
+    },
+  },
+} as const

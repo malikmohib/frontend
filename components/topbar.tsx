@@ -10,39 +10,33 @@ const pageTitles: Record<string, string> = {
   "/admin/orders": "Orders",
   "/admin/coupons": "Coupons",
   "/admin/coupon-trace": "Coupon Trace",
-  "/admin/wallet": "Wallet",
   "/admin/balance-history": "Balance History",
   "/admin/reports": "Reports",
+  "/admin/sellers": "Sellers",
   "/admin/users-tree": "Users Tree",
+  "/admin/wallet": "Wallet",
+
+  // Seller
+  "/seller/dashboard": "Dashboard",
 }
 
 export function Topbar() {
   const pathname = usePathname()
-
-  const title =
-    Object.entries(pageTitles).find(([path]) => pathname.startsWith(path))?.[1] ??
-    "Admin"
+  const title = pageTitles[pathname] || "FinAdmin"
 
   return (
-    <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-border bg-card/80 px-4 backdrop-blur-sm lg:px-6">
-      <h2 className="text-base font-semibold text-foreground lg:hidden">
-        {title}
-      </h2>
+    <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur">
+      <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 lg:px-6">
+        <div className="min-w-0">
+          <h1 className="truncate text-base font-semibold text-foreground">{title}</h1>
+        </div>
 
-      <div className="hidden lg:block" />
-
-      <div className="flex items-center gap-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-muted-foreground"
-        >
-          <Bell className="h-4 w-4" />
-          <span className="sr-only">Notifications</span>
-        </Button>
-
-        {/* ✅ Profile dropdown menu */}
-        <AdminProfileMenu />
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" aria-label="Notifications">
+            <Bell className="h-5 w-5" />
+          </Button>
+          <AdminProfileMenu />
+        </div>
       </div>
     </header>
   )

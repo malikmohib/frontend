@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { login, setTokens } from "@/lib/api/auth"
+import { getMe, login, setTokens } from "@/lib/api/auth"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -21,8 +21,18 @@ export default function LoginPage() {
       const tokens = await login(username.trim(), password)
       setTokens(tokens)
 
-      // go to admin dashboard after login
-      router.push("/admin/dashboard")
+      // fetch role from backend (source of truth)
+      const me = await getMe()
+
+      if (me.role === "admin") {
+        router.push("/admin/dashboard")
+      } else if (me.role === "seller") {
+        router.push("/seller/dashboard")
+      } else {
+        // agent (or unknown) — keep safe default for now
+        router.push("/seller/dashboard")
+      }
+
       router.refresh()
     } catch (err: any) {
       setError(err?.message ?? "Login failed")
@@ -35,9 +45,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm rounded-xl border bg-card p-6 shadow-sm">
         <h1 className="text-xl font-semibold">Sign in</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Login to continue
-        </p>
+        <p className="mt-1 text-sm text-muted-foreground">Login to continue</p>
 
         <form className="mt-6 space-y-4" onSubmit={onSubmit}>
           <div className="space-y-2">
