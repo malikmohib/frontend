@@ -5,7 +5,7 @@ import { StatsGrid } from "./stats-grid"
 import { SalesCharts } from "./sales-charts"
 import { HighlightCards } from "./highlight-cards"
 import { DateFilter } from "./date-filter"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 
 import {
   useAdminDashboardSummary,
@@ -16,6 +16,61 @@ import {
 } from "@/lib/api/admin/dashboard"
 
 import { DashboardFilterProvider } from "./dashboard-filter"
+
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-4 animate-in fade-in duration-200 ease-out motion-reduce:animate-none">
+      {/* Stats skeleton */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Card key={i} className="border-border bg-card shadow-sm">
+            <CardContent className="p-4">
+              <div className="animate-pulse">
+                <div className="flex items-center justify-between">
+                  <div className="h-4 w-4 rounded bg-muted" />
+                  <div className="h-3 w-10 rounded bg-muted" />
+                </div>
+                <div className="mt-3 space-y-2">
+                  <div className="h-7 w-28 rounded bg-muted" />
+                  <div className="h-3 w-20 rounded bg-muted" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Charts skeleton */}
+      <div className="grid gap-3 lg:grid-cols-2">
+        {Array.from({ length: 2 }).map((_, i) => (
+          <Card key={i} className="border-border bg-card shadow-sm">
+            <CardContent className="p-4">
+              <div className="animate-pulse space-y-3">
+                <div className="h-4 w-40 rounded bg-muted" />
+                <div className="h-56 w-full rounded bg-muted" />
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Highlight skeleton */}
+      <div className="grid gap-3 lg:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Card key={i} className="border-border bg-card shadow-sm">
+            <CardContent className="p-4">
+              <div className="animate-pulse space-y-2">
+                <div className="h-4 w-32 rounded bg-muted" />
+                <div className="h-7 w-24 rounded bg-muted" />
+                <div className="h-3 w-44 rounded bg-muted" />
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 function DashboardInner() {
   const summary = useAdminDashboardSummary()
@@ -41,64 +96,33 @@ function DashboardInner() {
   return (
     <PageShell title="Dashboard" subtitle="Overview">
       <div className="space-y-4">
-        <DateFilter />
+        <div className="animate-in fade-in slide-in-from-bottom-1 duration-200 ease-out motion-reduce:animate-none">
+          <DateFilter />
+        </div>
 
-        {isLoading ? (
-          <Card className="border-border bg-card shadow-sm">
-            <CardContent className="p-4 text-sm">Loading dashboard…</CardContent>
-          </Card>
-        ) : error ? (
-          <Card className="border-red-500/30 bg-red-500/10 shadow-sm">
+        {error ? (
+          <Card className="border-red-500/30 bg-red-500/10 shadow-sm animate-in fade-in duration-200 ease-out motion-reduce:animate-none">
             <CardContent className="p-4 text-sm text-red-600">
               {(error as any)?.message ?? "Failed to load dashboard"}
             </CardContent>
           </Card>
-        ) : null}
+        ) : isLoading ? (
+          <DashboardSkeleton />
+        ) : (
+          <div className="space-y-4">
+            <div className="animate-in fade-in slide-in-from-bottom-1 duration-200 ease-out motion-reduce:animate-none">
+              <StatsGrid />
+            </div>
 
-        <StatsGrid />
-        <SalesCharts />
-        <HighlightCards />
+            <div className="animate-in fade-in slide-in-from-bottom-1 duration-200 ease-out motion-reduce:animate-none">
+              <SalesCharts />
+            </div>
 
-        {/* TEMP debug panel */}
-        {!isLoading && !error ? (
-          <Card className="border-border bg-card shadow-sm">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">API Debug (temporary)</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-xs">
-              <div>
-                <div className="font-medium mb-1">/admin/dashboard/summary</div>
-                <pre className="max-h-56 overflow-auto rounded-md border bg-muted p-3">
-                  {JSON.stringify(summary.data, null, 2)}
-                </pre>
-              </div>
-              <div>
-                <div className="font-medium mb-1">/admin/dashboard/sales-by-plan</div>
-                <pre className="max-h-56 overflow-auto rounded-md border bg-muted p-3">
-                  {JSON.stringify(salesByPlan.data, null, 2)}
-                </pre>
-              </div>
-              <div>
-                <div className="font-medium mb-1">/admin/dashboard/sales-by-seller</div>
-                <pre className="max-h-56 overflow-auto rounded-md border bg-muted p-3">
-                  {JSON.stringify(salesBySeller.data, null, 2)}
-                </pre>
-              </div>
-              <div>
-                <div className="font-medium mb-1">/admin/dashboard/profit-by-seller</div>
-                <pre className="max-h-56 overflow-auto rounded-md border bg-muted p-3">
-                  {JSON.stringify(profitBySeller.data, null, 2)}
-                </pre>
-              </div>
-              <div>
-                <div className="font-medium mb-1">/admin/dashboard/balances</div>
-                <pre className="max-h-56 overflow-auto rounded-md border bg-muted p-3">
-                  {JSON.stringify(balances.data, null, 2)}
-                </pre>
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
+            <div className="animate-in fade-in slide-in-from-bottom-1 duration-200 ease-out motion-reduce:animate-none">
+              <HighlightCards />
+            </div>
+          </div>
+        )}
       </div>
     </PageShell>
   )

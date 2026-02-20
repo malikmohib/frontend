@@ -12,7 +12,7 @@ function formatMoneyFromCents(cents: number) {
   })}`
 }
 
-// Stable palette (keep your v0 colors)
+// Stable palette
 const palette = [
   "hsl(215, 80%, 52%)",
   "hsl(165, 60%, 44%)",
@@ -22,6 +22,18 @@ const palette = [
   "hsl(214, 20%, 60%)",
   "hsl(25, 60%, 48%)",
 ]
+
+/**
+ * ✅ Normalize hook data into an array safely.
+ * Handles: [] | {items: []} | {data: []} | {results: []} | undefined
+ */
+function asArray<T = any>(data: any): T[] {
+  if (Array.isArray(data)) return data
+  if (Array.isArray(data?.items)) return data.items
+  if (Array.isArray(data?.data)) return data.data
+  if (Array.isArray(data?.results)) return data.results
+  return []
+}
 
 function CircleProgress({
   percentage,
@@ -66,11 +78,22 @@ function CircleProgress({
             className="transition-all duration-700 ease-out"
           />
         </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
+
+        {/* ✅ Center only percentage */}
+        <div className="absolute inset-0 flex items-center justify-center">
           <span className="text-xl font-bold text-foreground">{percentage}%</span>
-          <span className="text-[10px] text-muted-foreground">{label}</span>
         </div>
       </div>
+
+      {/* ✅ Label outside */}
+      <p
+        title={label}
+        className="max-w-[220px] text-center text-[11px] leading-4 text-muted-foreground"
+        style={{ maxHeight: "32px", overflow: "hidden", wordBreak: "break-word" }}
+      >
+        {label}
+      </p>
+
       <p className="text-xs text-muted-foreground">{value}</p>
     </div>
   )
@@ -87,34 +110,38 @@ function TotalBar({
   totalLabel: string
   icon: React.ElementType
 }) {
-  const sum = items.reduce((a, b) => a + b.value, 0)
+  const totalValue = items.reduce((acc, it) => acc + it.value, 0)
+  const segments = items.map((it) => ({
+    ...it,
+    pct: totalValue > 0 ? (it.value / totalValue) * 100 : 0,
+  }))
 
   return (
-    <div className="mt-4 rounded-xl border border-border bg-secondary/50 p-4">
+    <div className="mt-4 rounded-xl border border-border bg-background p-3">
       <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-          <Icon className="h-5 w-5 text-primary" />
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
+          <Icon className="h-4 w-4 text-primary" />
         </div>
-        <div>
-          <p className="text-2xl font-bold text-foreground">{total}</p>
-          <p className="text-xs text-muted-foreground">{totalLabel}</p>
+
+        <div className="flex-1">
+          <div className="text-lg font-semibold text-foreground tabular-nums">{total}</div>
+          <div className="text-xs text-muted-foreground">{totalLabel}</div>
         </div>
       </div>
 
-      <div className="mt-3 flex h-2 overflow-hidden rounded-full">
-        {sum > 0 ? (
-          items.map((item, i) => (
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+        <div className="flex h-full w-full">
+          {segments.map((s, idx) => (
             <div
-              key={i}
+              key={idx}
+              className="h-full"
               style={{
-                width: `${(item.value / sum) * 100}%`,
-                backgroundColor: item.color,
+                width: `${s.pct}%`,
+                background: s.color,
               }}
             />
-          ))
-        ) : (
-          <div className="w-full bg-muted" />
-        )}
+          ))}
+        </div>
       </div>
     </div>
   )
@@ -124,66 +151,67 @@ export function SalesCharts() {
   const plansQ = useAdminSalesByPlan()
   const sellersQ = useAdminSalesBySeller()
 
-  const planItemsRaw: any[] = Array.isArray((plansQ.data as any)?.items)
-    ? ((plansQ.data as any).items as any[])
-    : []
+  const plansRaw = asArray<any>(plansQ.data)
+  const sellersRaw = asArray<any>(sellersQ.data)
 
-  const sellerItemsRaw: any[] = Array.isArray((sellersQ.data as any)?.items)
-    ? ((sellersQ.data as any).items as any[])
-    : []
+  const planTotalCents = plansRaw.reduce(
+    (acc, p) => acc + Number(p.salesCents ?? p.sales_cents ?? 0),
+    0
+  )
 
-  // Map backend items -> v0 UI shape
-  // Expected (based on your summary best_plan): plan_title, plan_category, sales_cents, orders_count, units
-  const salesByPlan = planItemsRaw
-    .slice()
-    .sort((a, b) => (b?.sales_cents ?? 0) - (a?.sales_cents ?? 0))
-    .slice(0, 6)
-    .map((p, idx) => ({
-      name: p?.plan_title || p?.plan_category || `Plan ${p?.plan_id ?? ""}`.trim() || "Unknown",
-      salesCents: p?.sales_cents ?? 0,
-      color: palette[idx % palette.length],
-    }))
+  const salesByPlan = plansRaw
+    .map((p, idx) => {
+      const cents = Number(p.salesCents ?? p.sales_cents ?? 0)
+      return {
+        name: String(p.planName ?? p.plan_name ?? p.title ?? "Plan"),
+        salesCents: cents,
+        percentage: planTotalCents > 0 ? Math.round((cents / planTotalCents) * 100) : 0,
+        color: palette[idx % palette.length],
+      }
+    })
+    .filter((x) => x.salesCents > 0)
 
-  const salesBySeller = sellerItemsRaw
-    .slice()
-    .sort((a, b) => (b?.sales_cents ?? 0) - (a?.sales_cents ?? 0))
-    .slice(0, 6)
-    .map((s, idx) => ({
-      name: s?.seller_name || s?.name || `Seller ${s?.seller_id ?? ""}`.trim() || "Unknown",
-      salesCents: s?.sales_cents ?? 0,
-      color: palette[idx % palette.length],
-    }))
+  const sellerTotalCents = sellersRaw.reduce(
+    (acc, s) => acc + Number(s.salesCents ?? s.sales_cents ?? 0),
+    0
+  )
 
-  const planTotalCents = salesByPlan.reduce((a, b) => a + b.salesCents, 0)
-  const sellerTotalCents = salesBySeller.reduce((a, b) => a + b.salesCents, 0)
+  const salesBySeller = sellersRaw
+    .map((s, idx) => {
+      const cents = Number(s.salesCents ?? s.sales_cents ?? 0)
+      return {
+        name: String(s.sellerName ?? s.seller_name ?? s.username ?? "Seller"),
+        salesCents: cents,
+        percentage: sellerTotalCents > 0 ? Math.round((cents / sellerTotalCents) * 100) : 0,
+        color: palette[idx % palette.length],
+      }
+    })
+    .filter((x) => x.salesCents > 0)
 
   return (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="grid gap-4 lg:grid-cols-2">
       <Card className="border-border bg-card shadow-sm">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-foreground">
-            Sales by Plan
-          </CardTitle>
+        <CardHeader>
+          <CardTitle className="text-sm font-semibold">Sales by Plan</CardTitle>
           <p className="text-xs text-muted-foreground">Revenue distribution across plans</p>
         </CardHeader>
 
-        <CardContent className="pt-2">
+        <CardContent>
           {plansQ.isLoading ? (
-            <div className="text-sm text-muted-foreground">Loading…</div>
+            <p className="py-10 text-center text-sm text-muted-foreground">Loading…</p>
           ) : salesByPlan.length === 0 ? (
-            <div className="text-sm text-muted-foreground">No plan data yet.</div>
+            <p className="py-10 text-center text-sm text-muted-foreground">No data available</p>
           ) : (
             <>
-              <div className="flex flex-wrap items-center justify-center gap-4">
-                {salesByPlan.map((item) => (
+              <div className="flex flex-wrap items-center justify-center gap-6 py-2">
+                {salesByPlan.slice(0, 3).map((item) => (
                   <CircleProgress
                     key={item.name}
-                    percentage={
-                      planTotalCents > 0 ? Math.round((item.salesCents / planTotalCents) * 100) : 0
-                    }
+                    percentage={item.percentage}
                     label={item.name}
                     value={formatMoneyFromCents(item.salesCents)}
                     color={item.color}
+                    size={96}
                   />
                 ))}
               </div>
@@ -200,29 +228,23 @@ export function SalesCharts() {
       </Card>
 
       <Card className="border-border bg-card shadow-sm">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-foreground">
-            Sales by Seller
-          </CardTitle>
+        <CardHeader>
+          <CardTitle className="text-sm font-semibold">Sales by Seller</CardTitle>
           <p className="text-xs text-muted-foreground">Performance breakdown by team member</p>
         </CardHeader>
 
-        <CardContent className="pt-2">
+        <CardContent>
           {sellersQ.isLoading ? (
-            <div className="text-sm text-muted-foreground">Loading…</div>
+            <p className="py-10 text-center text-sm text-muted-foreground">Loading…</p>
           ) : salesBySeller.length === 0 ? (
-            <div className="text-sm text-muted-foreground">No seller data yet.</div>
+            <p className="py-10 text-center text-sm text-muted-foreground">No data available</p>
           ) : (
             <>
-              <div className="flex flex-wrap items-center justify-center gap-4">
-                {salesBySeller.map((item) => (
+              <div className="flex flex-wrap items-center justify-center gap-6 py-2">
+                {salesBySeller.slice(0, 3).map((item) => (
                   <CircleProgress
                     key={item.name}
-                    percentage={
-                      sellerTotalCents > 0
-                        ? Math.round((item.salesCents / sellerTotalCents) * 100)
-                        : 0
-                    }
+                    percentage={item.percentage}
                     label={item.name}
                     value={formatMoneyFromCents(item.salesCents)}
                     color={item.color}

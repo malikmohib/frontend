@@ -124,17 +124,13 @@ export function CouponActions() {
             </div>
 
             <div className="text-xs text-muted-foreground">
-              Quantity:{" "}
-              <span className="font-medium text-foreground">{count}</span>
+              Quantity: <span className="font-medium text-foreground">{count}</span>
             </div>
 
             <div className="max-h-40 overflow-auto rounded-md border bg-background p-2">
               <div className="space-y-1">
                 {codes.slice(0, 10).map((c) => (
-                  <div
-                    key={c}
-                    className="flex items-center justify-between gap-2"
-                  >
+                  <div key={c} className="flex items-center justify-between gap-2">
                     <span className="font-mono text-xs">{c}</span>
                     <Button
                       variant="outline"
@@ -228,7 +224,8 @@ export function CouponActions() {
       }
 
       if (text.toLowerCase().includes("not reserved")) {
-        text = "This coupon is not reserved. Only reserved coupons can be unreserved."
+        text =
+          "This coupon is not reserved. Only reserved coupons can be unreserved."
       }
 
       setUnreserveMsg({ kind: "err", text })
@@ -241,9 +238,9 @@ export function CouponActions() {
   const qtyOk = parsePositiveInt(quantity)
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-1 duration-300 ease-out motion-reduce:animate-none">
       {/* Generate */}
-      <Card className="border-border bg-card shadow-sm">
+      <Card className="border-border bg-card shadow-sm animate-in fade-in duration-300 ease-out motion-reduce:animate-none">
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-sm font-medium text-foreground">
             <Plus className="h-4 w-4 text-muted-foreground" />
@@ -327,9 +324,7 @@ export function CouponActions() {
             {genMsg && (
               <div
                 className={`text-xs ${
-                  genMsg.kind === "ok"
-                    ? "text-muted-foreground"
-                    : "text-destructive"
+                  genMsg.kind === "ok" ? "text-muted-foreground" : "text-destructive"
                 }`}
               >
                 {genMsg.text}
@@ -341,7 +336,7 @@ export function CouponActions() {
 
       {/* Generated Results Card */}
       {generatedCodes.length > 0 && (
-        <Card className="border-border bg-card shadow-sm">
+        <Card className="border-border bg-card shadow-sm animate-in fade-in duration-300 ease-out motion-reduce:animate-none">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm font-medium text-foreground">
@@ -375,7 +370,7 @@ export function CouponActions() {
               {generatedCodes.map((code) => (
                 <div
                   key={code}
-                  className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2"
+                  className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 transition-colors hover:bg-secondary/40"
                 >
                   <span className="flex-1 font-mono text-xs text-foreground">
                     {code}
@@ -406,7 +401,7 @@ export function CouponActions() {
       )}
 
       {/* Unreserve */}
-      <Card className="border-border bg-card shadow-sm">
+      <Card className="border-border bg-card shadow-sm animate-in fade-in duration-300 ease-out motion-reduce:animate-none">
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-sm font-medium text-foreground">
             <Undo2 className="h-4 w-4 text-muted-foreground" />

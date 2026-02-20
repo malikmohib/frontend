@@ -2,7 +2,8 @@ import { AdminSidebar } from "@/components/admin-sidebar"
 import { MobileBottomNav } from "@/components/mobile-bottom-nav"
 import { Topbar } from "@/components/topbar"
 import { QueryProvider } from "@/components/providers/query-provider"
-import { Toaster } from "@/components/ui/toaster" // ✅ add this
+import { Toaster } from "@/components/ui/toaster"
+import { RouteTransition } from "@/components/route-transition"
 
 export default function AdminLayout({
   children,
@@ -13,15 +14,16 @@ export default function AdminLayout({
     <QueryProvider>
       <div className="min-h-screen bg-background">
         <AdminSidebar />
+
         <div className="lg:pl-60">
           <Topbar />
+
           <main className="mx-auto max-w-5xl px-4 py-6 pb-24 lg:px-6 lg:pb-6">
-            {children}
+            <RouteTransition>{children}</RouteTransition>
           </main>
         </div>
-        <MobileBottomNav />
 
-        {/* ✅ add this at bottom so toast works */}
+        <MobileBottomNav />
         <Toaster />
       </div>
     </QueryProvider>

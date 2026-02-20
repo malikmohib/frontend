@@ -20,12 +20,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
 import { Download, FileJson, FileText } from "lucide-react"
 import { useAdminUsersTree } from "@/lib/api/admin/users-tree"
-import {
-  useAdminOrdersReport,
-  downloadAdminSellerOrdersPdf,
-} from "@/lib/api/admin/reports"
+import { useAdminOrdersReport, downloadAdminSellerOrdersPdf } from "@/lib/api/admin/reports"
 
 // Radix/shadcn SelectItem cannot have value=""
 const ALL_SELLERS_VALUE = "__all__"
@@ -68,8 +66,7 @@ export default function ReportsPage() {
   // Default: ALL sellers
   const [username, setUsername] = React.useState<string>(ALL_SELLERS_VALUE)
 
-  const appliedUsername =
-    username === ALL_SELLERS_VALUE ? "" : username.trim()
+  const appliedUsername = username === ALL_SELLERS_VALUE ? "" : username.trim()
 
   // Fetch report (live updates as filters change)
   // IMPORTANT: username is OPTIONAL now ("" => all sellers below me)
@@ -117,18 +114,23 @@ export default function ReportsPage() {
 
   // Active Sellers:
   // - If specific seller selected => 1
-  // - If ALL sellers => derive unique seller count from the response (no guessing)
+  // - If ALL sellers => use dropdown count (report items don't include seller username)
   const activeSellers = React.useMemo(() => {
-  if (appliedUsername) return 1
-  return sellerOptions.length
-}, [appliedUsername, sellerOptions.length])
-
+    if (appliedUsername) return 1
+    return sellerOptions.length
+  }, [appliedUsername, sellerOptions.length])
 
   // Preview table grouped by plan
   const rowsByPlan = React.useMemo(() => {
     const map = new Map<
       number,
-      { plan: string; orders: number; units: number; revenueCents: number; unitPriceCents: number }
+      {
+        plan: string
+        orders: number
+        units: number
+        revenueCents: number
+        unitPriceCents: number
+      }
     >()
 
     for (const it of items) {
@@ -196,7 +198,7 @@ export default function ReportsPage() {
     try {
       setDownloading("pdf")
       await downloadAdminSellerOrdersPdf({
-        // IMPORTANT: allow null/empty => all sellers below me (backend must support this)
+        // allow null/empty => all sellers below me (backend supports this in your hooks)
         username: appliedUsername || null,
         plan_id: planId === "all" ? null : Number(planId),
         date_from: toDateTimeFromDateInput(dateFrom),
@@ -216,7 +218,7 @@ export default function ReportsPage() {
   return (
     <PageShell title="Reports" subtitle="Generate and download reports">
       {/* Filters */}
-      <Card className="border-border bg-card shadow-sm">
+      <Card className="border-border bg-card shadow-sm animate-in fade-in slide-in-from-bottom-1 duration-300 ease-out motion-reduce:animate-none">
         <CardContent className="p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
             <Input
@@ -234,7 +236,7 @@ export default function ReportsPage() {
 
             {/* Plan dropdown (real from report items) */}
             <Select value={planId} onValueChange={setPlanId}>
-              <SelectTrigger className="w-40 bg-background">
+              <SelectTrigger className="w-44 bg-background">
                 <SelectValue placeholder="Plan" />
               </SelectTrigger>
               <SelectContent>
@@ -249,7 +251,7 @@ export default function ReportsPage() {
 
             {/* Seller dropdown (real) */}
             <Select value={username} onValueChange={setUsername}>
-              <SelectTrigger className="w-40 bg-background">
+              <SelectTrigger className="w-44 bg-background">
                 <SelectValue placeholder="Seller" />
               </SelectTrigger>
               <SelectContent>
@@ -279,13 +281,25 @@ export default function ReportsPage() {
                 ))}
               </SelectContent>
             </Select>
+
+            <div className="flex items-center gap-2 sm:ml-auto">
+              {reportQ.isFetching ? (
+                <Badge variant="secondary" className="text-[10px]">
+                  Loading…
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="text-[10px]">
+                  {rowsByPlan.length} plan(s)
+                </Badge>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
 
       {/* Download Cards */}
       <div className="grid gap-4 sm:grid-cols-2">
-        <Card className="border-border bg-card shadow-sm">
+        <Card className="border-border bg-card shadow-sm animate-in fade-in duration-300 ease-out motion-reduce:animate-none">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
               <FileJson className="h-5 w-5 text-primary" />
@@ -307,7 +321,7 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-border bg-card shadow-sm">
+        <Card className="border-border bg-card shadow-sm animate-in fade-in duration-300 ease-out motion-reduce:animate-none">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/10">
               <FileText className="h-5 w-5 text-accent" />
@@ -334,7 +348,7 @@ export default function ReportsPage() {
 
       {/* Summary Metrics */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Card className="border-border bg-card shadow-sm">
+        <Card className="border-border bg-card shadow-sm animate-in fade-in duration-300 ease-out motion-reduce:animate-none">
           <CardContent className="p-4">
             <p className="text-2xl font-bold tracking-tight text-foreground">
               {formatUsdFromCents(totalRevenueCents)}
@@ -343,7 +357,7 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-border bg-card shadow-sm">
+        <Card className="border-border bg-card shadow-sm animate-in fade-in duration-300 ease-out motion-reduce:animate-none">
           <CardContent className="p-4">
             <p className="text-2xl font-bold tracking-tight text-foreground">
               {formatNumber(totalOrders)}
@@ -352,7 +366,7 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-border bg-card shadow-sm">
+        <Card className="border-border bg-card shadow-sm animate-in fade-in duration-300 ease-out motion-reduce:animate-none">
           <CardContent className="p-4">
             <p className="text-2xl font-bold tracking-tight text-foreground">
               {formatUsdFromCents(avgOrderValueCents)}
@@ -361,7 +375,7 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-border bg-card shadow-sm">
+        <Card className="border-border bg-card shadow-sm animate-in fade-in duration-300 ease-out motion-reduce:animate-none">
           <CardContent className="p-4">
             <p className="text-2xl font-bold tracking-tight text-foreground">
               {formatNumber(activeSellers)}
@@ -372,7 +386,7 @@ export default function ReportsPage() {
       </div>
 
       {/* Preview Table */}
-      <Card className="border-border bg-card shadow-sm">
+      <Card className="border-border bg-card shadow-sm overflow-hidden animate-in fade-in duration-300 ease-out motion-reduce:animate-none">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium text-foreground">
             Report Preview
@@ -382,63 +396,86 @@ export default function ReportsPage() {
         <CardContent className="p-0">
           {/* Desktop */}
           <div className="hidden md:block">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-border hover:bg-transparent">
-                  <TableHead className="text-xs text-muted-foreground">Plan</TableHead>
-                  <TableHead className="text-xs text-muted-foreground text-right">Orders</TableHead>
-                  <TableHead className="text-xs text-muted-foreground text-right">Units</TableHead>
-                  <TableHead className="text-xs text-muted-foreground text-right">Revenue</TableHead>
-                  <TableHead className="text-xs text-muted-foreground text-right">Avg Price</TableHead>
-                </TableRow>
-              </TableHeader>
-
-              <TableBody>
-                {reportQ.isFetching && (
-                  <TableRow className="border-border">
-                    <TableCell colSpan={5} className="py-6 text-center text-sm text-muted-foreground">
-                      Loading…
-                    </TableCell>
+            <div className="max-h-[60vh] overflow-auto">
+              <Table>
+                <TableHeader className="sticky top-0 z-10 bg-card/95 backdrop-blur border-b border-border">
+                  <TableRow className="border-border hover:bg-transparent">
+                    <TableHead className="text-xs text-muted-foreground">Plan</TableHead>
+                    <TableHead className="text-xs text-muted-foreground text-right">
+                      Orders
+                    </TableHead>
+                    <TableHead className="text-xs text-muted-foreground text-right">
+                      Units
+                    </TableHead>
+                    <TableHead className="text-xs text-muted-foreground text-right">
+                      Revenue
+                    </TableHead>
+                    <TableHead className="text-xs text-muted-foreground text-right">
+                      Avg Price
+                    </TableHead>
                   </TableRow>
-                )}
+                </TableHeader>
 
-                {reportQ.isError && (
-                  <TableRow className="border-border">
-                    <TableCell colSpan={5} className="py-6 text-center text-sm text-destructive">
-                      Failed to load report.
-                    </TableCell>
-                  </TableRow>
-                )}
+                <TableBody>
+                  {reportQ.isFetching && (
+                    <TableRow className="border-border">
+                      <TableCell
+                        colSpan={5}
+                        className="py-10 text-center text-sm text-muted-foreground"
+                      >
+                        Loading…
+                      </TableCell>
+                    </TableRow>
+                  )}
 
-                {!reportQ.isFetching && !reportQ.isError && rowsByPlan.length === 0 && (
-                  <TableRow className="border-border">
-                    <TableCell colSpan={5} className="py-6 text-center text-sm text-muted-foreground">
-                      No data.
-                    </TableCell>
-                  </TableRow>
-                )}
+                  {reportQ.isError && (
+                    <TableRow className="border-border">
+                      <TableCell
+                        colSpan={5}
+                        className="py-10 text-center text-sm text-destructive"
+                      >
+                        Failed to load report.
+                      </TableCell>
+                    </TableRow>
+                  )}
 
-                {rowsByPlan.map((row) => (
-                  <TableRow key={row.plan} className="border-border">
-                    <TableCell className="text-sm font-medium text-foreground">
-                      {row.plan}
-                    </TableCell>
-                    <TableCell className="text-sm text-foreground text-right">
-                      {formatNumber(row.orders)}
-                    </TableCell>
-                    <TableCell className="text-sm text-foreground text-right">
-                      {formatNumber(row.units)}
-                    </TableCell>
-                    <TableCell className="text-sm font-medium text-foreground text-right">
-                      {row.revenue}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground text-right">
-                      {row.avgPrice}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                  {!reportQ.isFetching && !reportQ.isError && rowsByPlan.length === 0 && (
+                    <TableRow className="border-border">
+                      <TableCell
+                        colSpan={5}
+                        className="py-10 text-center text-sm text-muted-foreground"
+                      >
+                        No data.
+                      </TableCell>
+                    </TableRow>
+                  )}
+
+                  {rowsByPlan.map((row, idx) => (
+                    <TableRow
+                      key={row.plan}
+                      className="border-border transition-colors hover:bg-secondary/50 animate-in fade-in duration-300 ease-out motion-reduce:animate-none"
+                      style={{ animationDelay: `${Math.min(idx * 12, 160)}ms` }}
+                    >
+                      <TableCell className="text-sm font-medium text-foreground">
+                        {row.plan}
+                      </TableCell>
+                      <TableCell className="text-sm text-foreground text-right tabular-nums">
+                        {formatNumber(row.orders)}
+                      </TableCell>
+                      <TableCell className="text-sm text-foreground text-right tabular-nums">
+                        {formatNumber(row.units)}
+                      </TableCell>
+                      <TableCell className="text-sm font-semibold text-foreground text-right tabular-nums">
+                        {row.revenue}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground text-right tabular-nums">
+                        {row.avgPrice}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </div>
 
           {/* Mobile */}
@@ -455,8 +492,12 @@ export default function ReportsPage() {
               <div className="py-4 text-sm text-muted-foreground">No data.</div>
             )}
 
-            {rowsByPlan.map((row) => (
-              <div key={row.plan} className="rounded-lg border border-border px-3 py-2.5">
+            {rowsByPlan.map((row, idx) => (
+              <div
+                key={row.plan}
+                className="rounded-lg border border-border px-3 py-2.5 bg-card shadow-sm transition-colors hover:bg-secondary/40 animate-in fade-in duration-300 ease-out motion-reduce:animate-none"
+                style={{ animationDelay: `${Math.min(idx * 18, 160)}ms` }}
+              >
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-foreground">{row.plan}</span>
                   <span className="text-sm font-semibold text-foreground">{row.revenue}</span>

@@ -16,19 +16,37 @@ import {
 import { Badge } from "@/components/ui/badge"
 import {
   Search,
-  ChevronLeft,
-  ChevronRight,
   Plus,
   Pencil,
   Trash2,
+  MoreHorizontal,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
 import { CreateSellerModal } from "./create-seller-modal"
 import { UpdateSellerModal } from "./update-seller-modal"
 import { useAdminSellers, type AdminSeller } from "@/lib/api/admin/sellers"
 import { apiFetch } from "@/lib/api/http"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 function RoleBadge({ role }: { role: string }) {
+  // More subtle & consistent than big colors
   const variant =
     role === "admin" ? "default" : role === "seller" ? "secondary" : "outline"
   return (
@@ -45,16 +63,14 @@ function formatDate(iso: string) {
 }
 
 function formatUsdFromCents(cents: number) {
-  const dollars = cents / 100
+  const dollars = (Number(cents) || 0) / 100
   return dollars.toLocaleString(undefined, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })
 }
 
-type DeleteSellerPayload = {
-  note?: string
-}
+type DeleteSellerPayload = { note?: string }
 
 async function deleteSeller(sellerId: number, body: DeleteSellerPayload) {
   return apiFetch(`/admin/sellers/${sellerId}`, {
@@ -69,6 +85,13 @@ export default function SellersPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [editSeller, setEditSeller] = useState<AdminSeller | null>(null)
 
+  // Pagination (real)
+  const [page, setPage] = useState(1)
+  const pageSize = 10
+
+  // Delete confirm dialog
+  const [deleteTarget, setDeleteTarget] = useState<AdminSeller | null>(null)
+
   const { data, isLoading, isError, error } = useAdminSellers()
   const qc = useQueryClient()
 
@@ -81,13 +104,19 @@ export default function SellersPage() {
       }),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["admin", "sellers"] })
+      await qc.invalidateQueries({ queryKey: ["admin", "users", "tree"] })
     },
   })
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim()
 
-    return sellers.filter((s) => {
+    // keep newest first (more useful)
+    const sorted = [...sellers].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )
+
+    return sorted.filter((s) => {
       const created = formatDate(s.created_at)
       const name = (s.full_name ?? "").toLowerCase()
       const email = (s.email ?? "").toLowerCase()
@@ -103,14 +132,29 @@ export default function SellersPage() {
     })
   }, [sellers, search, dateFilter])
 
-  async function handleDelete(seller: AdminSeller) {
-    const ok = window.confirm(
-      `Delete seller "${seller.username}"?\n\nIf seller has balance, it will return to parent.`
-    )
-    if (!ok) return
+  // reset to page 1 when filters change
+  useMemo(() => {
+    setPage(1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, dateFilter])
 
+  const total = filtered.length
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  const safePage = Math.min(page, totalPages)
+
+  const pageItems = useMemo(() => {
+    const start = (safePage - 1) * pageSize
+    return filtered.slice(start, start + pageSize)
+  }, [filtered, safePage])
+
+  const canPrev = safePage > 1
+  const canNext = safePage < totalPages
+
+  async function confirmDelete() {
+    if (!deleteTarget) return
     try {
-      await deleteMut.mutateAsync({ sellerId: Number(seller.id) })
+      await deleteMut.mutateAsync({ sellerId: Number(deleteTarget.id) })
+      setDeleteTarget(null)
     } catch (e: any) {
       console.error(e)
       alert(e?.message ?? "Failed to delete seller")
@@ -129,138 +173,229 @@ export default function SellersPage() {
       }
     >
       {/* Filters */}
-      <Card className="border-border bg-card shadow-sm">
+      <Card className="border-border bg-card shadow-sm animate-in fade-in slide-in-from-bottom-1 duration-300 ease-out motion-reduce:animate-none">
         <CardContent className="p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-1">
+              <div className="relative flex-1 min-w-[240px]">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search username, name, email..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-9 bg-background"
+                />
+              </div>
+
               <Input
-                placeholder="Search username, name, email..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9 bg-background"
+                type="date"
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="w-full sm:w-40 bg-background"
               />
             </div>
-            <Input
-              type="date"
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
-              className="w-full sm:w-40 bg-background"
-            />
+
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="text-[10px]">
+                {isLoading ? "Loading…" : `${total} seller(s)`}
+              </Badge>
+            </div>
           </div>
+
+          {isError && (
+            <p className="mt-3 text-xs text-destructive">
+              Failed to load sellers: {(error as Error)?.message ?? "Unknown error"}
+            </p>
+          )}
         </CardContent>
       </Card>
 
-      {/* Load/Error */}
-      {isLoading && <p className="text-xs text-muted-foreground">Loading sellers…</p>}
-      {isError && (
-        <p className="text-xs text-destructive">
-          Failed to load sellers: {(error as Error)?.message ?? "Unknown error"}
-        </p>
-      )}
-
       {/* Desktop Table */}
       <div className="hidden md:block">
-        <Card className="border-border bg-card shadow-sm overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-border hover:bg-transparent">
-                <TableHead className="text-xs text-muted-foreground">Username</TableHead>
-                <TableHead className="text-xs text-muted-foreground">Name</TableHead>
-                <TableHead className="text-xs text-muted-foreground">Role</TableHead>
-                <TableHead className="text-xs text-muted-foreground text-right">Balance</TableHead>
-                <TableHead className="text-xs text-muted-foreground">Parent</TableHead>
-                <TableHead className="text-xs text-muted-foreground">Created</TableHead>
-                <TableHead className="text-xs text-muted-foreground text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((seller) => (
-                <TableRow key={seller.id} className="border-border">
-                  <TableCell className="text-sm font-medium text-foreground">
-                    {seller.username}
-                  </TableCell>
-                  <TableCell className="text-sm text-foreground">
-                    {seller.full_name ?? "—"}
-                  </TableCell>
-                  <TableCell>
-                    <RoleBadge role={seller.role} />
-                  </TableCell>
-                  <TableCell className="text-sm font-medium text-foreground text-right">
-                    ${formatUsdFromCents(seller.balance_cents)}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {seller.parent_username ?? "—"}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {formatDate(seller.created_at)}
-                  </TableCell>
-
-                  {/* ✅ Actions: Edit + Delete side-by-side */}
-                  <TableCell className="text-right">
-                    <div className="inline-flex items-center gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 gap-1 text-xs text-primary hover:text-primary"
-                        onClick={() => setEditSeller(seller)}
-                      >
-                        <Pencil className="h-3 w-3" />
-                        Edit
-                      </Button>
-
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 gap-1 text-xs text-destructive hover:text-destructive"
-                        onClick={() => handleDelete(seller)}
-                        disabled={deleteMut.isPending}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                        {deleteMut.isPending ? "Deleting…" : "Delete"}
-                      </Button>
-                    </div>
-                  </TableCell>
+        <Card className="border-border bg-card shadow-sm overflow-hidden animate-in fade-in duration-300 ease-out motion-reduce:animate-none">
+          <div className="max-h-[70vh] overflow-auto">
+            <Table>
+              <TableHeader className="sticky top-0 z-10 bg-card/95 backdrop-blur border-b border-border">
+                <TableRow className="border-border hover:bg-transparent">
+                  <TableHead className="text-xs text-muted-foreground">Username</TableHead>
+                  <TableHead className="text-xs text-muted-foreground">Name</TableHead>
+                  <TableHead className="text-xs text-muted-foreground">Role</TableHead>
+                  <TableHead className="text-xs text-muted-foreground text-right">Balance</TableHead>
+                  <TableHead className="text-xs text-muted-foreground">Parent</TableHead>
+                  <TableHead className="text-xs text-muted-foreground">Created</TableHead>
+                  <TableHead className="text-xs text-muted-foreground text-right">Actions</TableHead>
                 </TableRow>
-              ))}
+              </TableHeader>
 
-              {!isLoading && filtered.length === 0 && (
-                <TableRow className="border-border">
-                  <TableCell colSpan={7} className="text-sm text-muted-foreground py-8 text-center">
-                    No sellers found.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+              <TableBody>
+                {isLoading && (
+                  <TableRow className="border-border">
+                    <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
+                      Loading sellers…
+                    </TableCell>
+                  </TableRow>
+                )}
+
+                {!isLoading && pageItems.length === 0 && (
+                  <TableRow className="border-border">
+                    <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
+                      No sellers found.
+                    </TableCell>
+                  </TableRow>
+                )}
+
+                {pageItems.map((seller, idx) => (
+                  <TableRow
+                    key={seller.id}
+                    className="border-border transition-colors hover:bg-secondary/50 animate-in fade-in duration-300 ease-out motion-reduce:animate-none"
+                    style={{ animationDelay: `${Math.min(idx * 15, 150)}ms` }}
+                  >
+                    <TableCell className="text-sm font-medium text-foreground">
+                      {seller.username}
+                    </TableCell>
+
+                    <TableCell className="text-sm text-foreground">
+                      {seller.full_name ?? "—"}
+                      {seller.email ? (
+                        <div className="text-xs text-muted-foreground truncate max-w-[240px]">
+                          {seller.email}
+                        </div>
+                      ) : null}
+                    </TableCell>
+
+                    <TableCell>
+                      <RoleBadge role={seller.role} />
+                    </TableCell>
+
+                    <TableCell className="text-sm font-medium text-foreground text-right tabular-nums">
+                      ${formatUsdFromCents(seller.balance_cents)}
+                    </TableCell>
+
+                    <TableCell className="text-sm text-muted-foreground">
+                      {seller.parent_username ?? "—"}
+                    </TableCell>
+
+                    <TableCell className="text-sm text-muted-foreground">
+                      {formatDate(seller.created_at)}
+                    </TableCell>
+
+                    <TableCell className="text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="h-4 w-4" />
+                            <span className="sr-only">Actions</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+
+                        <DropdownMenuContent align="end" className="w-44">
+                          <DropdownMenuItem onClick={() => setEditSeller(seller)}>
+                            <Pencil className="mr-2 h-4 w-4" />
+                            Edit
+                          </DropdownMenuItem>
+
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onClick={() => setDeleteTarget(seller)}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Pagination */}
+          <div className="flex items-center justify-between p-4 border-t border-border">
+            <p className="text-xs text-muted-foreground">
+              Page {safePage} of {totalPages} • Showing{" "}
+              {total === 0 ? 0 : (safePage - 1) * pageSize + 1}-
+              {Math.min(safePage * pageSize, total)} of {total}
+            </p>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                disabled={!canPrev}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                <span className="sr-only">Previous page</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                disabled={!canNext}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                <ChevronRight className="h-4 w-4" />
+                <span className="sr-only">Next page</span>
+              </Button>
+            </div>
+          </div>
         </Card>
       </div>
 
       {/* Mobile Cards */}
       <div className="flex flex-col gap-3 md:hidden">
-        {filtered.map((seller) => (
-          <Card key={seller.id} className="border-border bg-card shadow-sm">
+        {pageItems.map((seller, idx) => (
+          <Card
+            key={seller.id}
+            className="border-border bg-card shadow-sm transition-colors hover:bg-secondary/40 animate-in fade-in duration-300 ease-out motion-reduce:animate-none"
+            style={{ animationDelay: `${Math.min(idx * 20, 160)}ms` }}
+          >
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
-                    <span className="text-xs font-bold text-primary">
-                      {(seller.full_name ?? seller.username).charAt(0)}
-                    </span>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-foreground">
-                      {seller.full_name ?? "—"}
+                <div>
+                  <p className="text-sm font-medium text-foreground">
+                    {seller.full_name ?? "—"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">@{seller.username}</p>
+                  {seller.email ? (
+                    <p className="text-xs text-muted-foreground truncate max-w-[320px]">
+                      {seller.email}
                     </p>
-                    <p className="text-xs text-muted-foreground">@{seller.username}</p>
-                  </div>
+                  ) : null}
                 </div>
-                <RoleBadge role={seller.role} />
+
+                <div className="flex items-center gap-2">
+                  <RoleBadge role={seller.role} />
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <MoreHorizontal className="h-4 w-4" />
+                        <span className="sr-only">Actions</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-44">
+                      <DropdownMenuItem onClick={() => setEditSeller(seller)}>
+                        <Pencil className="mr-2 h-4 w-4" />
+                        Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={() => setDeleteTarget(seller)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               </div>
 
               <div className="mt-3 grid grid-cols-2 gap-y-1.5 text-xs">
                 <span className="text-muted-foreground">Balance</span>
-                <span className="text-right font-medium text-foreground">
+                <span className="text-right font-medium text-foreground tabular-nums">
                   ${formatUsdFromCents(seller.balance_cents)}
                 </span>
                 <span className="text-muted-foreground">Parent</span>
@@ -268,70 +403,72 @@ export default function SellersPage() {
                   {seller.parent_username ?? "—"}
                 </span>
                 <span className="text-muted-foreground">Created</span>
-                <span className="text-right text-foreground">
-                  {formatDate(seller.created_at)}
-                </span>
-              </div>
-
-              {/* ✅ Mobile actions: Edit then Delete */}
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full gap-1.5 text-xs"
-                  onClick={() => setEditSeller(seller)}
-                >
-                  <Pencil className="h-3 w-3" />
-                  Edit
-                </Button>
-
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  className="w-full gap-1.5 text-xs"
-                  onClick={() => handleDelete(seller)}
-                  disabled={deleteMut.isPending}
-                >
-                  <Trash2 className="h-3 w-3" />
-                  {deleteMut.isPending ? "Deleting…" : "Delete"}
-                </Button>
+                <span className="text-right text-foreground">{formatDate(seller.created_at)}</span>
               </div>
             </CardContent>
           </Card>
         ))}
 
-        {!isLoading && filtered.length === 0 && (
+        {!isLoading && pageItems.length === 0 && (
           <Card className="border-border bg-card shadow-sm">
-            <CardContent className="p-4">
+            <CardContent className="p-6">
               <p className="text-sm text-muted-foreground text-center">No sellers found.</p>
             </CardContent>
           </Card>
         )}
-      </div>
 
-      {/* Pagination (UI only) */}
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">
-          Showing 1-{filtered.length} of {filtered.length}
-        </p>
-        <div className="flex items-center gap-1">
-          <Button variant="outline" size="icon" className="h-8 w-8" disabled>
-            <ChevronLeft className="h-4 w-4" />
-            <span className="sr-only">Previous page</span>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 min-w-8 bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            1
-          </Button>
-          <Button variant="outline" size="icon" className="h-8 w-8" disabled>
-            <ChevronRight className="h-4 w-4" />
-            <span className="sr-only">Next page</span>
-          </Button>
+        {/* Mobile pagination */}
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">
+            Page {safePage} / {totalPages}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!canPrev}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Prev
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!canNext}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next
+            </Button>
+          </div>
         </div>
       </div>
+
+      {/* Delete Confirm Dialog */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete seller?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will delete{" "}
+              <span className="font-medium text-foreground">
+                {deleteTarget?.username}
+              </span>
+              . If the seller has a balance, it will be returned to the parent.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMut.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              disabled={deleteMut.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteMut.isPending ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Modals */}
       <CreateSellerModal open={createOpen} onOpenChange={setCreateOpen} />

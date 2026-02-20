@@ -1,10 +1,12 @@
 "use client"
-
+import { cn } from "@/lib/utils"
 import * as React from "react"
 import Link from "next/link"
 import { PageShell } from "@/components/page-shell"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import {
   Select,
   SelectContent,
@@ -20,7 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Search } from "lucide-react"
+import { Copy, Search } from "lucide-react"
 import { useAdminBalanceHistory } from "@/lib/api/admin/balance-history"
 import { useAdminUsersTree } from "@/lib/api/admin/users-tree"
 
@@ -60,6 +62,33 @@ function toYmd(d: Date) {
   const mm = String(d.getMonth() + 1).padStart(2, "0")
   const dd = String(d.getDate()).padStart(2, "0")
   return `${yyyy}-${mm}-${dd}`
+}
+
+function KindBadge({ kind }: { kind: string }) {
+  const label = KIND_LABELS[kind] ?? kind
+
+  // Subtle, professional styles (no huge colored bubbles)
+  const tone =
+    kind === "profit_credit" || kind === "transfer_in" || kind === "admin_topup"
+      ? "positive"
+      : kind === "purchase_debit" || kind === "transfer_out"
+        ? "negative"
+        : "neutral"
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium",
+        "leading-4 whitespace-nowrap",
+        "bg-background text-foreground border-border",
+        tone === "positive" && "bg-emerald-50 text-emerald-700 border-emerald-200",
+        tone === "negative" && "bg-rose-50 text-rose-700 border-rose-200",
+        tone === "neutral" && "bg-muted text-muted-foreground border-border"
+      )}
+    >
+      {label}
+    </span>
+  )
 }
 
 export default function BalanceHistoryPage() {
@@ -112,6 +141,18 @@ export default function BalanceHistoryPage() {
   const canPrev = offset > 0
   const canNext = items.length === limit
 
+  const [copiedTx, setCopiedTx] = React.useState<string | null>(null)
+
+  async function copy(text: string) {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedTx(text)
+      setTimeout(() => setCopiedTx(null), 900)
+    } catch {
+      // ignore clipboard failures
+    }
+  }
+
   function onSearch() {
     setOffset(0)
     setApplied({
@@ -150,10 +191,10 @@ export default function BalanceHistoryPage() {
   return (
     <PageShell title="Balance History" subtitle="All ledger entries and transactions">
       {/* Filters */}
-      <Card className="border-border bg-card shadow-sm">
+      <Card className="border-border bg-card shadow-sm animate-in fade-in slide-in-from-bottom-1 duration-300 ease-out motion-reduce:animate-none">
         <CardContent className="p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
-            {/* Seller dropdown (OPTIONAL) */}
+            {/* Seller dropdown */}
             <div className="w-48">
               <Select value={username} onValueChange={setUsername}>
                 <SelectTrigger className="w-48 bg-background">
@@ -198,6 +239,7 @@ export default function BalanceHistoryPage() {
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
             />
+
             <Input
               type="date"
               className="w-40 bg-background"
@@ -220,7 +262,7 @@ export default function BalanceHistoryPage() {
               </SelectContent>
             </Select>
 
-            <div className="relative flex-1">
+            <div className="relative flex-1 min-w-[220px]">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Search tx ID..."
@@ -231,117 +273,151 @@ export default function BalanceHistoryPage() {
             </div>
 
             <div className="flex gap-2">
-              <button
-                className="h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
-                onClick={onSearch}
-              >
+              <Button size="sm" className="h-10" onClick={onSearch} disabled={q.isFetching}>
                 Search
-              </button>
-              <button
-                className="h-10 px-4 rounded-md border bg-background text-sm"
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-10"
                 onClick={onReset}
+                disabled={q.isFetching}
               >
                 Reset
-              </button>
-              <button
-                className="h-10 px-4 rounded-md border bg-background text-sm"
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-10"
                 onClick={setLast7Days}
+                disabled={q.isFetching}
               >
                 Last 7 days
-              </button>
+              </Button>
             </div>
           </div>
 
-          {q.isFetching && (
-            <p className="mt-3 text-xs text-muted-foreground">Loading…</p>
-          )}
-          {q.isError && (
-            <p className="mt-3 text-xs text-destructive">
-              Failed to load wallet history.
-            </p>
-          )}
+          <div className="mt-3 flex items-center justify-between">
+            <div className="text-xs text-muted-foreground">
+              Offset: {offset} • Limit: {limit}
+            </div>
+
+            {q.isFetching && <div className="text-xs text-muted-foreground">Loading…</div>}
+            {q.isError && (
+              <div className="text-xs text-destructive">Failed to load wallet history.</div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
       {/* Desktop Table */}
       <div className="hidden md:block">
-        <Card className="border-border bg-card shadow-sm overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-border hover:bg-transparent">
-                <TableHead className="text-xs text-muted-foreground">Date</TableHead>
-                <TableHead className="text-xs text-muted-foreground">User</TableHead>
-                <TableHead className="text-xs text-muted-foreground">Kind</TableHead>
-                <TableHead className="text-xs text-muted-foreground text-right">
-                  Amount
-                </TableHead>
-                <TableHead className="text-xs text-muted-foreground text-right">
-                  Balance After
-                </TableHead>
-                <TableHead className="text-xs text-muted-foreground">Tx ID</TableHead>
-                <TableHead className="text-xs text-muted-foreground">Note</TableHead>
-              </TableRow>
-            </TableHeader>
+        <Card className="border-border bg-card shadow-sm overflow-hidden animate-in fade-in duration-300 ease-out motion-reduce:animate-none">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-foreground">
+              Ledger Entries
+            </CardTitle>
+          </CardHeader>
 
-            <TableBody>
-              {items.map((it: any) => {
-                const isPositive = it.amount_cents >= 0
-                const kindLabel = KIND_LABELS[it.entry_kind] ?? it.entry_kind
+          <div className="max-h-[70vh] overflow-auto">
+            <Table>
+              <TableHeader className="sticky top-0 z-10 bg-card/95 backdrop-blur border-b border-border">
+                <TableRow className="border-border hover:bg-transparent">
+                  <TableHead className="text-xs text-muted-foreground">Date</TableHead>
+                  <TableHead className="text-xs text-muted-foreground">User</TableHead>
+                  <TableHead className="text-xs text-muted-foreground">Kind</TableHead>
+                  <TableHead className="text-xs text-muted-foreground text-right">
+                    Amount
+                  </TableHead>
+                  <TableHead className="text-xs text-muted-foreground text-right">
+                    Balance After
+                  </TableHead>
+                  <TableHead className="text-xs text-muted-foreground">Tx ID</TableHead>
+                  <TableHead className="text-xs text-muted-foreground">Note</TableHead>
+                </TableRow>
+              </TableHeader>
 
-                return (
-                  <TableRow key={it.id} className="border-border">
-                    <TableCell className="text-xs font-mono text-muted-foreground">
-                      {formatDate(it.created_at)}
-                    </TableCell>
+              <TableBody>
+                {items.map((it: any, idx: number) => {
+                  const isPositive = it.amount_cents >= 0
 
-                    <TableCell className="text-sm text-foreground">
-                      {it.username ?? (applied.username || "—")}
-                    </TableCell>
-
-                    <TableCell className="text-sm text-foreground">
-                      {kindLabel}
-                    </TableCell>
-
-                    <TableCell
-                      className={`text-sm font-medium text-right ${
-                        isPositive ? "text-accent" : "text-destructive"
-                      }`}
+                  return (
+                    <TableRow
+                      key={it.id}
+                      className="border-border transition-colors hover:bg-secondary/50 animate-in fade-in duration-300 ease-out motion-reduce:animate-none"
+                      style={{ animationDelay: `${Math.min(idx * 12, 180)}ms` }}
                     >
-                      {formatSignedUsdFromCents(it.amount_cents)}
-                    </TableCell>
+                      <TableCell className="text-xs font-mono text-muted-foreground whitespace-nowrap">
+                        {formatDate(it.created_at)}
+                      </TableCell>
 
-                    <TableCell className="text-sm text-foreground text-right">
-                      {formatUsdFromCents(it.balance_after_cents)}
-                    </TableCell>
+                      <TableCell className="text-sm text-foreground">
+                        {it.username ?? (applied.username || "—")}
+                      </TableCell>
 
-                    <TableCell>
-                      <Link
-                        href={`/admin/balance-history/tx/${it.tx_id}?u=${encodeURIComponent(it.username ?? applied.username ?? "")}`}
-                        className="text-xs font-mono text-primary hover:underline"
+                      <TableCell className="text-sm text-foreground">
+                        <KindBadge kind={it.entry_kind} />
+                      </TableCell>
+
+                      <TableCell
+                        className={`text-sm font-semibold text-right tabular-nums ${
+                          isPositive ? "text-accent" : "text-destructive"
+                        }`}
                       >
-                        {it.tx_id}
-                      </Link>
-                    </TableCell>
+                        {formatSignedUsdFromCents(it.amount_cents)}
+                      </TableCell>
 
-                    <TableCell className="text-xs text-muted-foreground max-w-40 truncate">
-                      {it.note?.trim() ? it.note : "—"}
+                      <TableCell className="text-sm text-foreground text-right tabular-nums">
+                        {formatUsdFromCents(it.balance_after_cents)}
+                      </TableCell>
+
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Link
+                            href={`/admin/balance-history/tx/${it.tx_id}?u=${encodeURIComponent(
+                              it.username ?? applied.username ?? ""
+                            )}`}
+                            className="text-xs font-mono text-primary hover:underline"
+                          >
+                            {it.tx_id}
+                          </Link>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => copy(it.tx_id)}
+                            title="Copy tx id"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                          {copiedTx === it.tx_id && (
+                            <span className="text-[10px] text-muted-foreground">
+                              Copied
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+
+                      <TableCell className="text-xs text-muted-foreground max-w-40 truncate">
+                        {it.note?.trim() ? it.note : "—"}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+
+                {!q.isFetching && items.length === 0 && (
+                  <TableRow className="border-border">
+                    <TableCell
+                      colSpan={7}
+                      className="py-10 text-sm text-muted-foreground text-center"
+                    >
+                      No entries found.
                     </TableCell>
                   </TableRow>
-                )
-              })}
-
-              {!q.isFetching && items.length === 0 && (
-                <TableRow className="border-border">
-                  <TableCell
-                    colSpan={7}
-                    className="py-6 text-sm text-muted-foreground text-center"
-                  >
-                    No entries found.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+                )}
+              </TableBody>
+            </Table>
+          </div>
 
           {/* Pagination */}
           <div className="flex items-center justify-between p-4 border-t border-border">
@@ -349,20 +425,22 @@ export default function BalanceHistoryPage() {
               Offset: {offset} • Limit: {limit}
             </div>
             <div className="flex items-center gap-2">
-              <button
-                className="h-9 px-3 rounded-md border bg-background text-sm disabled:opacity-50"
+              <Button
+                variant="outline"
+                size="sm"
                 disabled={!canPrev || q.isFetching}
                 onClick={() => setOffset((o) => Math.max(0, o - limit))}
               >
                 Prev
-              </button>
-              <button
-                className="h-9 px-3 rounded-md border bg-background text-sm disabled:opacity-50"
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 disabled={!canNext || q.isFetching}
                 onClick={() => setOffset((o) => o + limit)}
               >
                 Next
-              </button>
+              </Button>
             </div>
           </div>
         </Card>
@@ -370,20 +448,28 @@ export default function BalanceHistoryPage() {
 
       {/* Mobile Cards */}
       <div className="flex flex-col gap-3 md:hidden">
-        {items.map((it: any) => {
+        {items.map((it: any, idx: number) => {
           const isPositive = it.amount_cents >= 0
-          const kindLabel = KIND_LABELS[it.entry_kind] ?? it.entry_kind
 
           return (
             <Link key={it.id} href={`/admin/balance-history/tx/${it.tx_id}`}>
-              <Card className="border-border bg-card shadow-sm">
+              <Card
+                className="border-border bg-card shadow-sm transition-colors hover:bg-secondary/40 animate-in fade-in duration-300 ease-out motion-reduce:animate-none"
+                style={{ animationDelay: `${Math.min(idx * 18, 160)}ms` }}
+              >
                 <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-foreground">
-                      {it.username ?? (applied.username || "—")}
-                    </span>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-foreground truncate">
+                        {it.username ?? (applied.username || "—")}
+                      </div>
+                      <div className="mt-1">
+                        <KindBadge kind={it.entry_kind} />
+                      </div>
+                    </div>
+
                     <span
-                      className={`text-sm font-semibold ${
+                      className={`text-sm font-semibold tabular-nums ${
                         isPositive ? "text-accent" : "text-destructive"
                       }`}
                     >
@@ -391,17 +477,32 @@ export default function BalanceHistoryPage() {
                     </span>
                   </div>
 
-                  <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
-                    <span>{kindLabel}</span>
-                    <span>{formatUsdFromCents(it.balance_after_cents)}</span>
-                  </div>
-
-                  <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
-                    <span className="font-mono">{it.tx_id}</span>
+                  <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                    <span className="tabular-nums">
+                      After: {formatUsdFromCents(it.balance_after_cents)}
+                    </span>
                     <span className="font-mono">{formatDate(it.created_at)}</span>
                   </div>
 
-                  <p className="mt-1 text-[10px] text-muted-foreground truncate">
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="font-mono text-[11px] text-primary truncate">
+                      {it.tx_id}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1.5"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        copy(it.tx_id)
+                      }}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      Copy
+                    </Button>
+                  </div>
+
+                  <p className="mt-2 text-[11px] text-muted-foreground truncate">
                     {it.note?.trim() ? it.note : "—"}
                   </p>
                 </CardContent>
@@ -412,11 +513,33 @@ export default function BalanceHistoryPage() {
 
         {!q.isFetching && items.length === 0 && (
           <Card className="border-border bg-card shadow-sm">
-            <CardContent className="p-4">
-              <div className="text-sm text-muted-foreground">No entries found.</div>
+            <CardContent className="p-6">
+              <div className="text-sm text-muted-foreground text-center">
+                No entries found.
+              </div>
             </CardContent>
           </Card>
         )}
+
+        {/* Mobile pagination (added) */}
+        <div className="flex items-center justify-between gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!canPrev || q.isFetching}
+            onClick={() => setOffset((o) => Math.max(0, o - limit))}
+          >
+            Prev
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!canNext || q.isFetching}
+            onClick={() => setOffset((o) => o + limit)}
+          >
+            Next
+          </Button>
+        </div>
       </div>
     </PageShell>
   )

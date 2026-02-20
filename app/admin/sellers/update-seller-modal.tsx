@@ -32,6 +32,7 @@ import type { AdminSeller } from "@/lib/api/admin/sellers"
 import { useAdminPlans } from "@/lib/api/admin/plans"
 import { apiFetch } from "@/lib/api/http"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useToast } from "@/hooks/use-toast"
 
 type PlanRow = {
   id: number // plan_id
@@ -43,6 +44,14 @@ interface UpdateSellerModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   seller: AdminSeller
+}
+
+function extractDetail(err: unknown): string {
+  if (!err) return "Request failed"
+  if (typeof err === "string") return err
+  if (err instanceof Error) return err.message
+  const anyErr = err as any
+  return anyErr?.detail ?? anyErr?.message ?? "Request failed"
 }
 
 function centsToDollarsString(cents: number) {
@@ -92,16 +101,19 @@ async function setSellerBalance(sellerId: number, body: SetBalancePayload) {
 export function UpdateSellerModal({ open, onOpenChange, seller }: UpdateSellerModalProps) {
   const { data: plansList } = useAdminPlans()
   const qc = useQueryClient()
+  const { toast } = useToast()
 
   const [plans, setPlans] = useState<PlanRow[]>([])
-  const [balanceAdjust, setBalanceAdjust] = useState(0) // ✅ this is TARGET balance in dollars
+  const [targetBalanceUsd, setTargetBalanceUsd] = useState(0) // TARGET balance in dollars
   const [submitted, setSubmitted] = useState(false)
+  const [errorMsg, setErrorMsg] = useState("")
 
   const [fullName, setFullName] = useState("")
   const [email, setEmail] = useState("")
   const [phone, setPhone] = useState("")
   const [country, setCountry] = useState("")
   const [role, setRole] = useState("seller")
+  const [isActive, setIsActive] = useState(true)
 
   const [addPlanId, setAddPlanId] = useState<string>("")
   const [addPlanPriceUsd, setAddPlanPriceUsd] = useState<string>("")
@@ -114,20 +126,23 @@ export function UpdateSellerModal({ open, onOpenChange, seller }: UpdateSellerMo
     mutationFn: (body: SetBalancePayload) => setSellerBalance(Number(seller.id), body),
   })
 
+  const busy = submitted || patchSellerMut.isPending || setBalanceMut.isPending
+
   useEffect(() => {
     if (!open) return
 
     setSubmitted(false)
+    setErrorMsg("")
 
-    // ✅ show current balance as editable value
     const currentBalUsd = Number(((seller.balance_cents ?? 0) / 100).toFixed(2))
-    setBalanceAdjust(currentBalUsd)
+    setTargetBalanceUsd(currentBalUsd)
 
     setFullName(seller.full_name ?? "")
     setEmail(seller.email ?? "")
     setPhone(seller.phone ?? "")
     setCountry((seller.country ?? "").toLowerCase())
     setRole((seller.role ?? "seller").toLowerCase())
+    setIsActive(Boolean(seller.is_active))
 
     setPlans(
       (seller.plans ?? []).map((p) => ({
@@ -142,11 +157,10 @@ export function UpdateSellerModal({ open, onOpenChange, seller }: UpdateSellerMo
   }, [open, seller])
 
   const currentBalanceDollars = useMemo(() => {
-    const dollars = (Number(seller.balance_cents ?? 0) / 100).toLocaleString(undefined, {
+    return ((Number(seller.balance_cents ?? 0) / 100) as number).toLocaleString(undefined, {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })
-    return dollars
   }, [seller.balance_cents])
 
   const displayName = fullName || seller.username
@@ -161,9 +175,7 @@ export function UpdateSellerModal({ open, onOpenChange, seller }: UpdateSellerMo
     const deltaCents = dollarsToCents(deltaDollars)
     setPlans((prev) =>
       prev.map((p) =>
-        p.id === planId
-          ? { ...p, priceCents: Math.max(0, p.priceCents + deltaCents) }
-          : p
+        p.id === planId ? { ...p, priceCents: Math.max(0, p.priceCents + deltaCents) } : p
       )
     )
   }
@@ -188,11 +200,7 @@ export function UpdateSellerModal({ open, onOpenChange, seller }: UpdateSellerMo
 
     setPlans((prev) => [
       ...prev,
-      {
-        id: pid,
-        name: chosen.title,
-        priceCents,
-      },
+      { id: pid, name: chosen.title, priceCents },
     ])
 
     setAddPlanId("")
@@ -200,13 +208,14 @@ export function UpdateSellerModal({ open, onOpenChange, seller }: UpdateSellerMo
   }
 
   async function handleSave() {
-    if (submitted) return
+    if (busy) return
     setSubmitted(true)
+    setErrorMsg("")
 
     try {
-      // ✅ 1) Set TARGET balance (only if changed)
+      // 1) Set TARGET balance (only if changed)
       const originalCents = Number(seller.balance_cents ?? 0)
-      const targetCents = dollarsToCents(Number(balanceAdjust) || 0)
+      const targetCents = dollarsToCents(Number(targetBalanceUsd) || 0)
 
       if (targetCents !== originalCents) {
         await setBalanceMut.mutateAsync({
@@ -215,13 +224,14 @@ export function UpdateSellerModal({ open, onOpenChange, seller }: UpdateSellerMo
         })
       }
 
-      // ✅ 2) Patch seller (profile + full replace plans)
+      // 2) Patch seller (profile + full replace plans)
       const body: PatchSellerPayload = {
-        full_name: fullName ?? null,
-        email: email ?? null,
-        phone: phone ?? null,
-        country: (country ?? "").trim() ? country : null,
+        full_name: fullName.trim() ? fullName.trim() : null,
+        email: email.trim() ? email.trim() : null,
+        phone: phone.trim() ? phone.trim() : null,
+        country: country.trim() ? country.trim().toLowerCase() : null,
         role: (role ?? "seller") as any,
+        is_active: Boolean(isActive),
         plans: plans.map((p) => ({
           plan_id: Number(p.id),
           price_cents: Number(p.priceCents) || 0,
@@ -230,15 +240,22 @@ export function UpdateSellerModal({ open, onOpenChange, seller }: UpdateSellerMo
 
       await patchSellerMut.mutateAsync(body)
 
-      // ✅ refresh sellers list
       await qc.invalidateQueries({ queryKey: ["admin", "sellers"] })
+      await qc.invalidateQueries({ queryKey: ["admin", "users", "tree"] })
+      await qc.invalidateQueries({ queryKey: ["admin-plans"] })
+
+      toast({
+        title: "Seller updated",
+        description: `@${seller.username} saved successfully.`,
+      })
 
       setSubmitted(false)
       onOpenChange(false)
-    } catch (e: any) {
-      console.error(e)
+    } catch (e) {
+      const msg = extractDetail(e)
+      setErrorMsg(msg)
+      toast({ title: "Update failed", description: msg })
       setSubmitted(false)
-      alert(e?.message ?? "Something went wrong")
     }
   }
 
@@ -246,37 +263,50 @@ export function UpdateSellerModal({ open, onOpenChange, seller }: UpdateSellerMo
   const roleValue = role || "seller"
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+    <Dialog open={open} onOpenChange={busy ? undefined : onOpenChange}>
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto animate-in fade-in slide-in-from-bottom-1 duration-200 ease-out motion-reduce:animate-none">
         <DialogHeader>
           <DialogTitle className="text-lg font-semibold text-foreground">
-            Update User
+            Update Seller
           </DialogTitle>
           <DialogDescription>
-            Edit profile and assigned plans for {displayName}
+            Edit profile, status, balance, and assigned plans for {displayName}.
           </DialogDescription>
         </DialogHeader>
 
         {/* User Profile Section */}
-        <div className="rounded-xl border border-border bg-background p-4">
-          <h3 className="mb-3 text-sm font-semibold text-foreground">User Profile</h3>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="rounded-xl border border-border bg-card p-4">
+          <h3 className="mb-1 text-sm font-semibold text-foreground">Profile</h3>
+          <p className="text-xs text-muted-foreground">Account details and access.</p>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs font-medium text-muted-foreground">Username</Label>
-              <Input value={seller.username} className="bg-card" disabled />
+              <Input value={seller.username} className="bg-background" disabled />
             </div>
+
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs font-medium text-muted-foreground">Phone Number</Label>
-              <Input value={phone} onChange={(e) => setPhone(e.target.value)} className="bg-card" />
+              <Input
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                className="bg-background"
+              />
             </div>
+
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs font-medium text-muted-foreground">Name</Label>
-              <Input value={fullName} onChange={(e) => setFullName(e.target.value)} className="bg-card" />
+              <Input
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                className="bg-background"
+              />
             </div>
+
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs font-medium text-muted-foreground">Role</Label>
               <Select value={roleValue} onValueChange={setRole}>
-                <SelectTrigger className="bg-card">
+                <SelectTrigger className="bg-background">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -286,10 +316,14 @@ export function UpdateSellerModal({ open, onOpenChange, seller }: UpdateSellerMo
                 </SelectContent>
               </Select>
             </div>
+
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs font-medium text-muted-foreground">Country</Label>
-              <Select value={countryValue} onValueChange={(v) => setCountry(v === "custom" ? "" : v)}>
-                <SelectTrigger className="bg-card">
+              <Select
+                value={countryValue}
+                onValueChange={(v) => setCountry(v === "custom" ? "" : v)}
+              >
+                <SelectTrigger className="bg-background">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -305,44 +339,72 @@ export function UpdateSellerModal({ open, onOpenChange, seller }: UpdateSellerMo
                 <Input
                   value={country}
                   onChange={(e) => setCountry(e.target.value.toLowerCase())}
-                  className="bg-card mt-2"
+                  className="bg-background mt-2"
                   placeholder="e.g. sa"
                 />
               )}
             </div>
+
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs font-medium text-muted-foreground">Email</Label>
-              <Input value={email} onChange={(e) => setEmail(e.target.value)} className="bg-card" />
+              <Input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="bg-background"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5 sm:col-span-2">
+              <Label className="text-xs font-medium text-muted-foreground">Status</Label>
+              <Select
+                value={isActive ? "active" : "inactive"}
+                onValueChange={(v) => setIsActive(v === "active")}
+              >
+                <SelectTrigger className="bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
           {/* Balance Adjust */}
-          <div className="mt-4 flex flex-col gap-1.5">
+          <div className="mt-5 flex flex-col gap-1.5">
             <Label className="text-xs font-medium text-muted-foreground">
               Balance&nbsp;
               <span className="font-semibold text-foreground">(${currentBalanceDollars})</span>
+              <span className="ml-2 text-xs text-muted-foreground">(target)</span>
             </Label>
+
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 size="icon"
                 className="h-9 w-9 shrink-0"
-                onClick={() => setBalanceAdjust((v) => Number((v - 10).toFixed(2)))}
+                disabled={busy}
+                onClick={() => setTargetBalanceUsd((v) => Number((v - 10).toFixed(2)))}
               >
                 <Minus className="h-4 w-4" />
                 <span className="sr-only">Decrease balance</span>
               </Button>
+
               <Input
                 type="number"
-                value={balanceAdjust}
-                onChange={(e) => setBalanceAdjust(Number(e.target.value))}
-                className="bg-card text-center"
+                value={targetBalanceUsd}
+                onChange={(e) => setTargetBalanceUsd(Number(e.target.value))}
+                className="bg-background text-center tabular-nums"
+                disabled={busy}
               />
+
               <Button
                 variant="outline"
                 size="icon"
                 className="h-9 w-9 shrink-0"
-                onClick={() => setBalanceAdjust((v) => Number((v + 10).toFixed(2)))}
+                disabled={busy}
+                onClick={() => setTargetBalanceUsd((v) => Number((v + 10).toFixed(2)))}
               >
                 <Plus className="h-4 w-4" />
                 <span className="sr-only">Increase balance</span>
@@ -352,14 +414,17 @@ export function UpdateSellerModal({ open, onOpenChange, seller }: UpdateSellerMo
         </div>
 
         {/* Assigned Plans Section */}
-        <div className="rounded-xl border border-border bg-background p-4">
-          <h3 className="mb-3 text-sm font-semibold text-foreground">Assigned Plans</h3>
+        <div className="rounded-xl border border-border bg-card p-4">
+          <h3 className="mb-1 text-sm font-semibold text-foreground">Assigned Plans</h3>
+          <p className="text-xs text-muted-foreground">
+            Adjust plan pricing or add/remove plans.
+          </p>
 
           {plans.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">No plans assigned</p>
           ) : (
             <>
-              <div className="hidden sm:block">
+              <div className="hidden sm:block mt-4">
                 <Table>
                   <TableHeader>
                     <TableRow className="border-border hover:bg-transparent">
@@ -373,22 +438,37 @@ export function UpdateSellerModal({ open, onOpenChange, seller }: UpdateSellerMo
                     {plans.map((plan, i) => (
                       <TableRow key={plan.id} className="border-border">
                         <TableCell className="text-sm text-muted-foreground">{i + 1}</TableCell>
-                        <TableCell className="text-sm font-medium text-foreground">{plan.name}</TableCell>
+                        <TableCell className="text-sm font-medium text-foreground">
+                          {plan.name}
+                        </TableCell>
                         <TableCell>
                           <div className="flex items-center justify-end gap-1.5">
-                            <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => adjustPrice(plan.id, -5)}>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="h-7 w-7"
+                              disabled={busy}
+                              onClick={() => adjustPrice(plan.id, -5)}
+                            >
                               <Minus className="h-3 w-3" />
                               <span className="sr-only">Decrease price</span>
                             </Button>
 
                             <Input
-                              className="h-7 w-24 bg-card text-right"
+                              className="h-7 w-24 bg-background text-right tabular-nums"
                               inputMode="decimal"
+                              disabled={busy}
                               value={centsToDollarsString(plan.priceCents)}
                               onChange={(e) => setPriceFromInput(plan.id, e.target.value)}
                             />
 
-                            <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => adjustPrice(plan.id, 5)}>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="h-7 w-7"
+                              disabled={busy}
+                              onClick={() => adjustPrice(plan.id, 5)}
+                            >
                               <Plus className="h-3 w-3" />
                               <span className="sr-only">Increase price</span>
                             </Button>
@@ -399,6 +479,7 @@ export function UpdateSellerModal({ open, onOpenChange, seller }: UpdateSellerMo
                             variant="ghost"
                             size="icon"
                             className="h-7 w-7 text-destructive hover:text-destructive"
+                            disabled={busy}
                             onClick={() => removePlan(plan.id)}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -411,40 +492,54 @@ export function UpdateSellerModal({ open, onOpenChange, seller }: UpdateSellerMo
                 </Table>
               </div>
 
-              <div className="flex flex-col gap-2 sm:hidden">
+              <div className="flex flex-col gap-2 sm:hidden mt-4">
                 {plans.map((plan, i) => (
-                  <div key={plan.id} className="flex items-center justify-between rounded-lg border border-border bg-card p-3">
+                  <div
+                    key={plan.id}
+                    className="flex items-center justify-between rounded-lg border border-border bg-background p-3"
+                  >
                     <div>
                       <p className="text-sm font-medium text-foreground">
                         {i + 1}. {plan.name}
                       </p>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => adjustPrice(plan.id, -5)}>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-7 w-7"
+                        disabled={busy}
+                        onClick={() => adjustPrice(plan.id, -5)}
+                      >
                         <Minus className="h-3 w-3" />
-                        <span className="sr-only">Decrease price</span>
                       </Button>
 
                       <Input
-                        className="h-7 w-20 bg-card text-right"
+                        className="h-7 w-20 bg-background text-right tabular-nums"
                         inputMode="decimal"
+                        disabled={busy}
                         value={centsToDollarsString(plan.priceCents)}
                         onChange={(e) => setPriceFromInput(plan.id, e.target.value)}
                       />
 
-                      <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => adjustPrice(plan.id, 5)}>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-7 w-7"
+                        disabled={busy}
+                        onClick={() => adjustPrice(plan.id, 5)}
+                      >
                         <Plus className="h-3 w-3" />
-                        <span className="sr-only">Increase price</span>
                       </Button>
 
                       <Button
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7 text-destructive hover:text-destructive"
+                        disabled={busy}
                         onClick={() => removePlan(plan.id)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
-                        <span className="sr-only">Remove plan</span>
                       </Button>
                     </div>
                   </div>
@@ -453,15 +548,17 @@ export function UpdateSellerModal({ open, onOpenChange, seller }: UpdateSellerMo
             </>
           )}
 
-          <div className="mt-4 rounded-lg border border-border bg-card p-3">
+          <div className="mt-4 rounded-lg border border-border bg-background p-3">
             <p className="text-sm font-medium text-foreground mb-2">Add Plan</p>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end">
               <div className="sm:col-span-2">
                 <Label className="text-xs font-medium text-muted-foreground">Plan</Label>
-                <Select value={addPlanId} onValueChange={setAddPlanId}>
-                  <SelectTrigger className="bg-card mt-1">
-                    <SelectValue placeholder={addablePlans.length ? "Select plan" : "No available plans"} />
+                <Select value={addPlanId} onValueChange={setAddPlanId} disabled={busy}>
+                  <SelectTrigger className="bg-background mt-1">
+                    <SelectValue
+                      placeholder={addablePlans.length ? "Select plan" : "No available plans"}
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {addablePlans.map((p) => (
@@ -476,16 +573,23 @@ export function UpdateSellerModal({ open, onOpenChange, seller }: UpdateSellerMo
               <div>
                 <Label className="text-xs font-medium text-muted-foreground">Price (USD)</Label>
                 <Input
-                  className="bg-card mt-1 text-right"
+                  className="bg-background mt-1 text-right tabular-nums"
                   placeholder="0.00"
                   inputMode="decimal"
+                  disabled={busy}
                   value={addPlanPriceUsd}
                   onChange={(e) => setAddPlanPriceUsd(e.target.value)}
                 />
               </div>
 
               <div className="sm:col-span-3">
-                <Button type="button" variant="outline" className="w-full" onClick={handleAddPlan} disabled={!addPlanId}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={handleAddPlan}
+                  disabled={busy || !addPlanId}
+                >
                   Add
                 </Button>
               </div>
@@ -493,12 +597,14 @@ export function UpdateSellerModal({ open, onOpenChange, seller }: UpdateSellerMo
           </div>
         </div>
 
+        {errorMsg && <p className="text-xs text-destructive">{errorMsg}</p>}
+
         <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={submitted}>
-            {submitted ? "Saving..." : "Save"}
+          <Button onClick={handleSave} disabled={busy}>
+            {busy ? "Saving..." : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>
