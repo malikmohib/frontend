@@ -42,6 +42,7 @@ export function SellerCouponActions() {
 
   const hasPlans = planOptions.length > 0
   const isLoading = plansQ.isLoading
+  const isError = plansQ.isError
 
   const [planId, setPlanId] = React.useState<string>("")
   const [count, setCount] = React.useState<string>("10")
@@ -116,7 +117,8 @@ export function SellerCouponActions() {
     }
   }
 
-  const disableGenerate = submitting || isLoading || !hasPlans
+  const disableControls = submitting || isLoading || isError || !hasPlans
+  const disableGenerate = disableControls
 
   return (
     <Card className="border-border bg-card shadow-sm">
@@ -126,9 +128,9 @@ export function SellerCouponActions() {
 
       <CardContent className="space-y-4">
         {/* No plans assigned banner */}
-        {!isLoading && !plansQ.isError && !hasPlans ? (
+        {!isLoading && !isError && !hasPlans ? (
           <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-            <div className="font-medium text-foreground">No plans assigned</div>
+            <div className="font-medium text-foreground">No plans assigned. Ask admin to assign plans.</div>
             <div className="mt-1 text-xs">
               You can’t generate coupons yet. Ask your admin to assign plans to your account.
             </div>
@@ -136,7 +138,7 @@ export function SellerCouponActions() {
         ) : null}
 
         {/* Load error */}
-        {plansQ.isError ? (
+        {isError ? (
           <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             Failed to load plans.
           </div>
@@ -144,11 +146,7 @@ export function SellerCouponActions() {
 
         <div className="space-y-2">
           <Label>Plan</Label>
-          <Select
-            value={planId}
-            onValueChange={setPlanId}
-            disabled={isLoading || plansQ.isError || !hasPlans}
-          >
+          <Select value={planId} onValueChange={setPlanId} disabled={disableControls}>
             <SelectTrigger>
               <SelectValue
                 placeholder={
@@ -177,7 +175,7 @@ export function SellerCouponActions() {
               value={count}
               onChange={(e) => setCount(e.target.value)}
               placeholder="10"
-              disabled={!hasPlans}
+              disabled={disableControls}
             />
           </div>
 
@@ -187,7 +185,7 @@ export function SellerCouponActions() {
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="optional"
-              disabled={!hasPlans}
+              disabled={disableControls}
             />
           </div>
         </div>
@@ -208,7 +206,12 @@ export function SellerCouponActions() {
                   className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2"
                 >
                   <div className="truncate font-mono text-xs">{code}</div>
-                  <Button variant="ghost" size="icon" onClick={() => copyCode(code)} aria-label="Copy code">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => copyCode(code)}
+                    aria-label="Copy code"
+                  >
                     {copied === code ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                   </Button>
                 </div>

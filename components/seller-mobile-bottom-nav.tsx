@@ -2,12 +2,13 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Ticket } from "lucide-react"
+import { LayoutDashboard, Ticket, Users2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const tabs = [
   { label: "Dashboard", href: "/seller/dashboard", icon: LayoutDashboard },
   { label: "Coupons", href: "/seller/coupons", icon: Ticket },
+  { label: "Users", href: "/seller/users", icon: Users2 },
 ]
 
 export function SellerMobileBottomNav() {
